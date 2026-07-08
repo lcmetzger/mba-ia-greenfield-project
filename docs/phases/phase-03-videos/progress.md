@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/14 completed
+**SIs:** 3/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -19,8 +19,8 @@
   - Teste de multipart real usa uma única parte (last-part semantics do S3/MinIO não exige tamanho mínimo de 5MB), evitando payloads grandes só para exercitar o mecanismo.
 
 ### SI-03.3 — QueueModule (wrapper BullMQ/Redis)
-- **Status:** pending
-- **Tests:** no tests
+- **Status:** completed
+- **Tests:** 1/1 passing (queue.module.spec.ts — compilation contra Redis real)
 - **Observations:** none
 
 ### SI-03.4 — Entidade Video, enum de status, migration e exceções de domínio

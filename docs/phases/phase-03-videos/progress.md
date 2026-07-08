@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/14 completed
+**SIs:** 5/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -33,9 +33,13 @@
   - Migration gerada pelo CLI veio com formatação fora do Prettier do projeto (aspas duplas, indentação) — corrigido com `eslint --fix`.
 
 ### SI-03.5 — Iniciação de upload (POST /videos)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14/14 passing (short-code.util.spec.ts: 3, videos.service.spec.ts: 4, videos.service.integration-spec.ts: 2, videos.module.spec.ts: 1, test/videos.e2e-spec.ts: 4)
+- **Observations:**
+  - Adicionado `ChannelsService.findByUserId` (não estava na SI original) — necessário para resolver o canal do usuário autenticado; extensão natural do serviço que já é dono do domínio `Channel`.
+  - `size_bytes` máximo de 10GB é verificado no `VideosService` (lança `FileTooLargeException` com `errorCode` próprio), não via `class-validator` no DTO — isso mantém o `errorCode: FILE_TOO_LARGE` do Error Catalog, em vez do genérico `VALIDATION_ERROR` que um `@Max` no DTO geraria.
+  - Modo contínuo do `/implement` ativado a pedido do usuário — deixo de pausar entre SIs a partir de agora.
+  - `test/videos.e2e-spec.ts` e `videos.service.spec.ts` tipados explicitamente (sem `any` solto) para passar no lint estrito do projeto — diverge levemente do padrão já usado em `test/auth.e2e-spec.ts` (que tem 48 erros de lint pré-existentes, fora do escopo desta fase, descobertos ao investigar este ponto).
 
 ### SI-03.6 — URLs de parte (POST /videos/:id/upload-parts)
 - **Status:** pending

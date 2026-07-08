@@ -8,6 +8,7 @@ import {
   UploadCompletionFailedException,
   UploadInitiationFailedException,
   VideoNotDraftException,
+  VideoNotErrorException,
   VideoNotFoundException,
 } from '../common/exceptions/domain.exception';
 import type { ChannelsService } from '../channels/channels.service';
@@ -363,6 +364,85 @@ describe('VideosService', () => {
         [{ partNumber: 1, etag: 'etag-1' }],
       );
       expect(result.status).toBe(VideoStatus.PROCESSING);
+      expect(videoQueue.add).toHaveBeenCalledWith(
+        'process-video',
+        { videoId: 'video-id' },
+        expect.objectContaining({ attempts: 3 }),
+      );
+    });
+  });
+
+  describe('reprocess', () => {
+    const errorVideo = {
+      id: 'video-id',
+      channel_id: 'channel-id',
+      status: VideoStatus.ERROR,
+      error_message: 'ffmpeg exploded',
+    } as Video;
+
+    it('throws VideoNotErrorException when the video is not in error status', async () => {
+      const videoRepository = {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...errorVideo, status: VideoStatus.READY }),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {};
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(service.reprocess('user-id', 'video-id')).rejects.toThrow(
+        VideoNotErrorException,
+      );
+    });
+
+    it('throws VideoNotFoundException when the video belongs to another channel', async () => {
+      const videoRepository = {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...errorVideo, channel_id: 'other-channel' }),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {};
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(service.reprocess('user-id', 'video-id')).rejects.toThrow(
+        VideoNotFoundException,
+      );
+    });
+
+    it('resets to processing, clears error_message, and re-enqueues the job', async () => {
+      const videoRepository = {
+        findOne: jest.fn().mockResolvedValue(errorVideo),
+        save: jest.fn().mockImplementation((v: Video) => Promise.resolve(v)),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {};
+      const videoQueue = { add: jest.fn().mockResolvedValue(undefined) };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+        videoQueue,
+      );
+
+      const result = await service.reprocess('user-id', 'video-id');
+
+      expect(result.status).toBe(VideoStatus.PROCESSING);
+      expect(result.error_message).toBeNull();
       expect(videoQueue.add).toHaveBeenCalledWith(
         'process-video',
         { videoId: 'video-id' },

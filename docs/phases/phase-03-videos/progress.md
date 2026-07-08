@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/14 completed
+**SIs:** 13/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -96,9 +96,12 @@
   - Reaproveita `VideosService.resolveByShortCode` (mesma checagem 404/403/409 de posse/status da SI-03.11) e `StorageService.getObjectStream` sem `Range` (corpo completo sempre) — só troca o `Content-Disposition`.
 
 ### SI-03.13 — Reprocessamento (POST /videos/:id/reprocess)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 42/42 passing (videos.service.spec.ts: 15 unit total — 3 novos, test/videos.e2e-spec.ts: 27 e2e total — 3 novos + 24 pré-existentes sem regressão)
+- **Observations:**
+  - Extraído `enqueueProcessingJob` (privado) para reaproveitar entre `completeUpload` e `reprocess` a mesma lógica de enfileiramento (`attempts`/`backoff`) — evita duplicação, já que ambos publicam o mesmo evento `video.process`.
+  - `reprocess` limpa `error_message` (volta a `null`) ao reenfileirar — não estava explícito no plano, mas evita que um `error_message` antigo fique visível em `GET /videos/:id` enquanto o vídeo está `processing` de novo.
+  - E2E precisou de acesso direto à fila (`getQueueToken(VIDEO_PROCESSING_QUEUE)`) para verificar que o job foi reenfileirado, já que não há worker rodando nesse contexto — seguiu o mesmo padrão já usado em `videos.service.integration-spec.ts`. Adicionado `videoQueue.drain(true)` ao `beforeEach` compartilhado do arquivo e2e (sem impacto nos testes pré-existentes, confirmado pela suíte completa).
 
 ### SI-03.14 — E2E de ciclo completo e atualização do CLAUDE.md
 - **Status:** pending

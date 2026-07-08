@@ -12,6 +12,7 @@ import {
   UploadCompletionFailedException,
   UploadInitiationFailedException,
   VideoNotDraftException,
+  VideoNotErrorException,
   VideoNotFoundException,
   VideoNotOwnedException,
   VideoNotReadyException,
@@ -139,14 +140,22 @@ export class VideosService {
     video.status = VideoStatus.PROCESSING;
     const saved = await this.videoRepository.save(video);
 
-    await this.videoQueue.add(
-      VIDEO_PROCESS_JOB,
-      { videoId: saved.id },
-      {
-        attempts: JOB_ATTEMPTS,
-        backoff: { type: 'exponential', delay: JOB_BACKOFF_DELAY_MS },
-      },
-    );
+    await this.enqueueProcessingJob(saved.id);
+
+    return saved;
+  }
+
+  async reprocess(userId: string, videoId: string): Promise<Video> {
+    const video = await this.findOwnedVideoOrThrow(userId, videoId);
+    if (video.status !== VideoStatus.ERROR) {
+      throw new VideoNotErrorException();
+    }
+
+    video.status = VideoStatus.PROCESSING;
+    video.error_message = null;
+    const saved = await this.videoRepository.save(video);
+
+    await this.enqueueProcessingJob(saved.id);
 
     return saved;
   }
@@ -192,6 +201,17 @@ export class VideosService {
     }
 
     return video;
+  }
+
+  private async enqueueProcessingJob(videoId: string): Promise<void> {
+    await this.videoQueue.add(
+      VIDEO_PROCESS_JOB,
+      { videoId },
+      {
+        attempts: JOB_ATTEMPTS,
+        backoff: { type: 'exponential', delay: JOB_BACKOFF_DELAY_MS },
+      },
+    );
   }
 
   /**

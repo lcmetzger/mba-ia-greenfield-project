@@ -1,6 +1,8 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
+import type { Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
@@ -9,6 +11,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { DomainExceptionFilter } from '../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import { MailService } from '../src/mail/mail.service';
+import { VIDEO_PROCESSING_QUEUE } from '../src/queue/queue.constants';
 import { cleanAllTables } from '../src/test/create-test-data-source';
 import { clearBucket } from '../src/test/minio';
 
@@ -44,6 +47,7 @@ describe('Videos (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
   let throttlerStorage: ThrottlerStorageService;
+  let videoQueue: Queue<{ videoId: string }>;
 
   beforeAll(async () => {
     const moduleFixture = await Test.createTestingModule({
@@ -67,6 +71,9 @@ describe('Videos (e2e)', () => {
     dataSource = moduleFixture.get(DataSource);
     throttlerStorage =
       moduleFixture.get<ThrottlerStorageService>(ThrottlerStorage);
+    videoQueue = moduleFixture.get<Queue<{ videoId: string }>>(
+      getQueueToken(VIDEO_PROCESSING_QUEUE),
+    );
   });
 
   afterAll(async () => {
@@ -77,6 +84,7 @@ describe('Videos (e2e)', () => {
     await cleanAllTables(dataSource);
     await clearBucket(VIDEOS_BUCKET);
     throttlerStorage.storage.clear();
+    await videoQueue.drain(true);
   });
 
   async function captureConfirmationToken(
@@ -704,6 +712,91 @@ describe('Videos (e2e)', () => {
       const response = await request(app.getHttpServer())
         .get('/videos/doesnotexist2/download')
         .set('Authorization', `Bearer ${accessToken}`);
+
+      const errBody = response.body as ErrorResponseBody;
+      expect(response.status).toBe(404);
+      expect(errBody.error).toBe('VIDEO_NOT_FOUND');
+    });
+  });
+
+  describe('POST /videos/:id/reprocess', () => {
+    async function initiateAndMarkError(accessToken: string): Promise<string> {
+      const initResponse = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Failed video',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          original_filename: 'video.mp4',
+        });
+      const { id } = initResponse.body as InitiateUploadResponseBody;
+
+      // No worker runs against this e2e app instance — flip status directly
+      // to simulate a video that failed processing (SI-03.9's worker onFailed).
+      await dataSource.query(
+        `UPDATE videos SET status = 'error', error_message = 'ffmpeg exploded' WHERE id = $1`,
+        [id],
+      );
+
+      return id;
+    }
+
+    it('re-enqueues the job and returns 200 with status processing', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'reprocess-ok@example.com',
+      );
+      const videoId = await initiateAndMarkError(accessToken);
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/reprocess`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(response.status).toBe(200);
+      const body = response.body as { id: string; status: string };
+      expect(body.id).toBe(videoId);
+      expect(body.status).toBe('processing');
+
+      const jobs = await videoQueue.getJobs(['waiting', 'active']);
+      expect(jobs.some((job) => job.data.videoId === videoId)).toBe(true);
+    });
+
+    it('returns 409 VIDEO_NOT_ERROR when the video is not in error status', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'reprocess-notdraft@example.com',
+      );
+      const initResponse = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Still a draft',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          original_filename: 'video.mp4',
+        });
+      const { id } = initResponse.body as InitiateUploadResponseBody;
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${id}/reprocess`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      const errBody = response.body as ErrorResponseBody;
+      expect(response.status).toBe(409);
+      expect(errBody.error).toBe('VIDEO_NOT_ERROR');
+    });
+
+    it('returns 404 when the video belongs to another user', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'reprocess-owner@example.com',
+      );
+      const videoId = await initiateAndMarkError(ownerToken);
+      const intruderToken = await registerConfirmAndLogin(
+        'reprocess-intruder@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/reprocess`)
+        .set('Authorization', `Bearer ${intruderToken}`);
 
       const errBody = response.body as ErrorResponseBody;
       expect(response.status).toBe(404);

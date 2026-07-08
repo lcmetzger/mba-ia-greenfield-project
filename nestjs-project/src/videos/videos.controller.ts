@@ -185,6 +185,38 @@ export class VideosController {
     return { id: video.id, status: video.status };
   }
 
+  @Post(':id/reprocess')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reprocess a video that failed processing',
+    description:
+      'Re-enqueues the processing job for a video in the error status, without requiring a new upload.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reprocessing re-enqueued, video is now processing',
+    schema: {
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        status: { type: 'string', example: 'processing' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or does not belong to the caller',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not in error status',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async reprocess(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    const video = await this.videosService.reprocess(user.sub, id);
+    return { id: video.id, status: video.status };
+  }
+
   @Get()
   @ApiOperation({
     summary: "List the caller's videos",

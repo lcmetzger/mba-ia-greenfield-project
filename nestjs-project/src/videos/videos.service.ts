@@ -149,6 +149,22 @@ export class VideosService {
     return saved;
   }
 
+  async listByChannel(userId: string): Promise<Video[]> {
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel) {
+      return [];
+    }
+
+    return this.videoRepository.find({
+      where: { channel_id: channel.id },
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findById(userId: string, videoId: string): Promise<Video> {
+    return this.findOwnedVideoOrThrow(userId, videoId);
+  }
+
   /**
    * Resolves a video by its internal id, scoped to the caller's channel.
    * Non-existence and wrong-ownership both surface as VIDEO_NOT_FOUND (404)

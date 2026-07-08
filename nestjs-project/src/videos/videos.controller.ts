@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -168,5 +169,89 @@ export class VideosController {
       dto.parts,
     );
     return { id: video.id, status: video.status };
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: "List the caller's videos",
+    description:
+      "Returns every video belonging to the authenticated user's channel.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "List of the caller's videos",
+    schema: {
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              short_code: { type: 'string' },
+              title: { type: 'string' },
+              status: { type: 'string' },
+              duration_seconds: { type: 'string', nullable: true },
+              created_at: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+  })
+  async list(@CurrentUser() user: JwtPayload) {
+    const videos = await this.videosService.listByChannel(user.sub);
+    return {
+      items: videos.map((video) => ({
+        id: video.id,
+        short_code: video.short_code,
+        title: video.title,
+        status: video.status,
+        duration_seconds: video.duration_seconds,
+        created_at: video.created_at,
+      })),
+    };
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Get video detail',
+    description:
+      'Returns the current status and metadata of a video owned by the caller. Used for polling processing status.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Video detail',
+    schema: {
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        short_code: { type: 'string' },
+        title: { type: 'string' },
+        status: { type: 'string' },
+        duration_seconds: { type: 'string', nullable: true },
+        metadata: { type: 'object', nullable: true },
+        error_message: { type: 'string', nullable: true },
+        created_at: { type: 'string', format: 'date-time' },
+        updated_at: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or does not belong to the caller',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    const video = await this.videosService.findById(user.sub, id);
+    return {
+      id: video.id,
+      short_code: video.short_code,
+      title: video.title,
+      status: video.status,
+      duration_seconds: video.duration_seconds,
+      metadata: video.metadata,
+      error_message: video.error_message,
+      created_at: video.created_at,
+      updated_at: video.updated_at,
+    };
   }
 }

@@ -323,4 +323,112 @@ describe('Videos (e2e)', () => {
       expect(body.error).toBe('VIDEO_NOT_FOUND');
     });
   });
+
+  describe('GET /videos', () => {
+    async function initiateVideo(
+      accessToken: string,
+      title: string,
+    ): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title,
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          original_filename: 'video.mp4',
+        });
+      return (response.body as InitiateUploadResponseBody).id;
+    }
+
+    it("returns only the authenticated user's channel videos", async () => {
+      const ownerAToken = await registerConfirmAndLogin('list-a@example.com');
+      const ownerBToken = await registerConfirmAndLogin('list-b@example.com');
+      await initiateVideo(ownerAToken, 'A1');
+      await initiateVideo(ownerAToken, 'A2');
+      await initiateVideo(ownerBToken, 'B1');
+
+      const response = await request(app.getHttpServer())
+        .get('/videos')
+        .set('Authorization', `Bearer ${ownerAToken}`);
+
+      expect(response.status).toBe(200);
+      const body = response.body as {
+        items: { id: string; title: string; status: string }[];
+      };
+      expect(body.items).toHaveLength(2);
+      expect(body.items.map((item) => item.title).sort()).toEqual(['A1', 'A2']);
+    });
+
+    it('rejects with 401 when no Authorization header is sent', async () => {
+      const response = await request(app.getHttpServer()).get('/videos');
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe('GET /videos/:id', () => {
+    async function initiateVideo(accessToken: string): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Video for detail',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          original_filename: 'video.mp4',
+        });
+      return (response.body as InitiateUploadResponseBody).id;
+    }
+
+    it("returns 200 with the video's fields for the owner", async () => {
+      const accessToken = await registerConfirmAndLogin('detail@example.com');
+      const videoId = await initiateVideo(accessToken);
+
+      const response = await request(app.getHttpServer())
+        .get(`/videos/${videoId}`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(response.status).toBe(200);
+      const body = response.body as {
+        id: string;
+        title: string;
+        status: string;
+      };
+      expect(body.id).toBe(videoId);
+      expect(body.title).toBe('Video for detail');
+      expect(body.status).toBe('draft');
+    });
+
+    it('returns 404 when the video belongs to another user', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'detail-owner@example.com',
+      );
+      const videoId = await initiateVideo(ownerToken);
+      const intruderToken = await registerConfirmAndLogin(
+        'detail-intruder@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/videos/${videoId}`)
+        .set('Authorization', `Bearer ${intruderToken}`);
+
+      const body = response.body as ErrorResponseBody;
+      expect(response.status).toBe(404);
+      expect(body.error).toBe('VIDEO_NOT_FOUND');
+    });
+
+    it('returns 404 when the video does not exist', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'detail-missing@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/videos/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      const body = response.body as ErrorResponseBody;
+      expect(response.status).toBe(404);
+      expect(body.error).toBe('VIDEO_NOT_FOUND');
+    });
+  });
 });

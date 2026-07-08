@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/14 completed
+**SIs:** 10/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -73,9 +73,11 @@
   - `onFailed` (`@OnWorkerEvent('failed')`) só marca o vídeo como `ERROR` quando `job.attemptsMade >= job.opts.attempts` — evita marcar erro prematuramente durante retries em andamento (o job ainda vai tentar de novo).
 
 ### SI-03.10 — Endpoints de leitura (GET /videos, GET /videos/:id)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 15/15 passing (test/videos.e2e-spec.ts — suíte completa, 5 novos + 10 pré-existentes sem regressão)
+- **Observations:**
+  - `VideosService.listByChannel` retorna `[]` quando o usuário autenticado não tem canal, em vez de lançar `ChannelNotFoundException` — o Error Catalog não documenta erro para `GET /videos`, então uma lista vazia é o comportamento mais correto (não há vídeos para listar).
+  - `VideosService.findById` reaproveita o `findOwnedVideoOrThrow` privado já usado pelas SIs 03.6/03.7 — mesma semântica de posse (404 uniforme para inexistente/não-dono).
 
 ### SI-03.11 — Streaming (GET /videos/:shortCode/stream)
 - **Status:** pending

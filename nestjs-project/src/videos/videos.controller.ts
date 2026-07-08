@@ -16,6 +16,7 @@ import {
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { UploadPartsDto } from './dto/upload-parts.dto';
 import { VideosService } from './videos.service';
@@ -117,5 +118,55 @@ export class VideosController {
       dto.part_numbers,
     );
     return { parts };
+  }
+
+  @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete a multipart upload',
+    description:
+      'Finalizes the multipart upload on the object storage, transitions the video to processing, and enqueues the processing job.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Upload completed, video is now processing',
+    schema: {
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        status: { type: 'string', example: 'processing' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation failed',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or does not belong to the caller',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not in draft status',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 502,
+    description: 'Object storage failed to complete the multipart upload',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: CompleteUploadDto,
+  ) {
+    const video = await this.videosService.completeUpload(
+      user.sub,
+      id,
+      dto.parts,
+    );
+    return { id: video.id, status: video.status };
   }
 }

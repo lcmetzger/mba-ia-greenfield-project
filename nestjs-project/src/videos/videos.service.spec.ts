@@ -1,9 +1,11 @@
 import type { ConfigType } from '@nestjs/config';
+import type { Queue } from 'bullmq';
 import type { Repository } from 'typeorm';
 import type storageConfig from '../config/storage.config';
 import {
   ChannelNotFoundException,
   FileTooLargeException,
+  UploadCompletionFailedException,
   UploadInitiationFailedException,
   VideoNotDraftException,
   VideoNotFoundException,
@@ -29,14 +31,22 @@ function makeService(
   videoRepository: Partial<Record<'create' | 'save' | 'findOne', jest.Mock>>,
   channelsService: Partial<Record<'findByUserId', jest.Mock>>,
   storageService: Partial<
-    Record<'createMultipartUpload' | 'presignUploadPart', jest.Mock>
+    Record<
+      | 'createMultipartUpload'
+      | 'presignUploadPart'
+      | 'completeMultipartUpload'
+      | 'headObject',
+      jest.Mock
+    >
   >,
+  videoQueue: Partial<Record<'add', jest.Mock>> = { add: jest.fn() },
 ): VideosService {
   return new VideosService(
     videoRepository as unknown as Repository<Video>,
     channelsService as unknown as ChannelsService,
     storageService as unknown as StorageService,
     makeConfig(),
+    videoQueue as unknown as Queue,
   );
 }
 
@@ -264,6 +274,99 @@ describe('VideosService', () => {
         'videos/video-id/original',
         'upload-id',
         1,
+      );
+    });
+  });
+
+  describe('completeUpload', () => {
+    const draftVideo = {
+      id: 'video-id',
+      channel_id: 'channel-id',
+      status: VideoStatus.DRAFT,
+      storage_key: 'videos/video-id/original',
+      upload_id: 'upload-id',
+    } as Video;
+    const parts = [{ part_number: 1, etag: 'etag-1' }];
+
+    it('throws VideoNotDraftException when the video is not in draft status', async () => {
+      const videoRepository = {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...draftVideo, status: VideoStatus.READY }),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {
+        completeMultipartUpload: jest.fn(),
+        headObject: jest.fn(),
+      };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(
+        service.completeUpload('user-id', 'video-id', parts),
+      ).rejects.toThrow(VideoNotDraftException);
+    });
+
+    it('throws UploadCompletionFailedException when the storage call fails', async () => {
+      const videoRepository = {
+        findOne: jest.fn().mockResolvedValue(draftVideo),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {
+        completeMultipartUpload: jest.fn().mockRejectedValue(new Error('boom')),
+        headObject: jest.fn(),
+      };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(
+        service.completeUpload('user-id', 'video-id', parts),
+      ).rejects.toThrow(UploadCompletionFailedException);
+    });
+
+    it('completes the upload, transitions to processing, and enqueues the job', async () => {
+      const videoRepository = {
+        findOne: jest.fn().mockResolvedValue(draftVideo),
+        save: jest.fn().mockImplementation((v: Video) => Promise.resolve(v)),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {
+        completeMultipartUpload: jest.fn().mockResolvedValue(undefined),
+        headObject: jest.fn().mockResolvedValue({ ContentLength: 1024 }),
+      };
+      const videoQueue = { add: jest.fn().mockResolvedValue(undefined) };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+        videoQueue,
+      );
+
+      const result = await service.completeUpload('user-id', 'video-id', parts);
+
+      expect(storageService.completeMultipartUpload).toHaveBeenCalledWith(
+        'streamtube-videos',
+        'videos/video-id/original',
+        'upload-id',
+        [{ partNumber: 1, etag: 'etag-1' }],
+      );
+      expect(result.status).toBe(VideoStatus.PROCESSING);
+      expect(videoQueue.add).toHaveBeenCalledWith(
+        'process-video',
+        { videoId: 'video-id' },
+        expect.objectContaining({ attempts: 3 }),
       );
     });
   });

@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/14 completed
+**SIs:** 7/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -50,9 +50,11 @@
   - `POST /videos/:id/upload-parts` usa `@HttpCode(HttpStatus.OK)` (200) — o padrão do NestJS para `@Post()` é 201, mas o plano documenta 200 para este endpoint (não cria um recurso novo).
 
 ### SI-03.7 — Conclusão do upload (POST /videos/:id/complete)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 26/26 passing (videos.service.spec.ts, videos.service.integration-spec.ts, videos.module.spec.ts, test/videos.e2e-spec.ts); suíte completa 176 unit + 92 integration + 62 e2e sem regressão
+- **Observations:**
+  - `VideosModule` passa a importar `QueueModule`; `VideosService` injeta a fila via `@InjectQueue`.
+  - Teste de integração exercita o ciclo real completo (initiateUpload → PUT real via URL presignada → completeUpload) contra MinIO e Redis reais, verificando o job na fila via `queue.getJobs`.
 
 ### SI-03.8 — FfmpegService: extração de metadados e geração de thumbnail
 - **Status:** pending

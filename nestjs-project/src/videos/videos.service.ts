@@ -1,22 +1,32 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import type { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import storageConfig from '../config/storage.config';
 import {
   ChannelNotFoundException,
   FileTooLargeException,
+  UploadCompletionFailedException,
   UploadInitiationFailedException,
   VideoNotDraftException,
   VideoNotFoundException,
 } from '../common/exceptions/domain.exception';
+import {
+  VIDEO_PROCESSING_QUEUE,
+  VIDEO_PROCESS_JOB,
+} from '../queue/queue.constants';
 import { buildVideoKey } from '../storage/storage.keys';
 import { StorageService } from '../storage/storage.service';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { VideoStatus } from './entities/video-status.enum';
 import { Video } from './entities/video.entity';
 import { generateShortCode } from './short-code.util';
+
+const JOB_ATTEMPTS = 3;
+const JOB_BACKOFF_DELAY_MS = 5000;
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
 
@@ -29,6 +39,8 @@ export class VideosService {
     private readonly storageService: StorageService,
     @Inject(storageConfig.KEY)
     private readonly storage: ConfigType<typeof storageConfig>,
+    @InjectQueue(VIDEO_PROCESSING_QUEUE)
+    private readonly videoQueue: Queue,
   ) {}
 
   async initiateUpload(userId: string, dto: InitiateUploadDto): Promise<Video> {
@@ -92,6 +104,49 @@ export class VideosService {
         ),
       })),
     );
+  }
+
+  async completeUpload(
+    userId: string,
+    videoId: string,
+    parts: { part_number: number; etag: string }[],
+  ): Promise<Video> {
+    const video = await this.findOwnedVideoOrThrow(userId, videoId);
+    if (video.status !== VideoStatus.DRAFT) {
+      throw new VideoNotDraftException();
+    }
+
+    try {
+      await this.storageService.completeMultipartUpload(
+        this.storage.videosBucket,
+        video.storage_key,
+        video.upload_id as string,
+        parts.map((part) => ({
+          partNumber: part.part_number,
+          etag: part.etag,
+        })),
+      );
+      await this.storageService.headObject(
+        this.storage.videosBucket,
+        video.storage_key,
+      );
+    } catch {
+      throw new UploadCompletionFailedException();
+    }
+
+    video.status = VideoStatus.PROCESSING;
+    const saved = await this.videoRepository.save(video);
+
+    await this.videoQueue.add(
+      VIDEO_PROCESS_JOB,
+      { videoId: saved.id },
+      {
+        attempts: JOB_ATTEMPTS,
+        backoff: { type: 'exponential', delay: JOB_BACKOFF_DELAY_MS },
+      },
+    );
+
+    return saved;
   }
 
   /**

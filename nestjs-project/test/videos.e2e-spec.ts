@@ -235,4 +235,92 @@ describe('Videos (e2e)', () => {
       expect(response.status).toBe(400);
     });
   });
+
+  describe('POST /videos/:id/complete', () => {
+    async function initiateVideo(accessToken: string): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Video for complete',
+          content_type: 'text/plain',
+          size_bytes: 16,
+          original_filename: 'video.txt',
+        });
+      return (response.body as InitiateUploadResponseBody).id;
+    }
+
+    async function uploadSinglePart(
+      accessToken: string,
+      videoId: string,
+    ): Promise<string> {
+      const partsResponse = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/upload-parts`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ part_numbers: [1] });
+      const { url } = (
+        partsResponse.body as { parts: { part_number: number; url: string }[] }
+      ).parts[0];
+      const putResponse = await fetch(url, {
+        method: 'PUT',
+        body: Buffer.from('hello streamtube'),
+      });
+      return putResponse.headers.get('etag') as string;
+    }
+
+    it('completes the upload and transitions the video to processing', async () => {
+      const accessToken = await registerConfirmAndLogin('complete@example.com');
+      const videoId = await initiateVideo(accessToken);
+      const etag = await uploadSinglePart(accessToken, videoId);
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/complete`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ part_number: 1, etag }] });
+
+      expect(response.status).toBe(200);
+      const body = response.body as { id: string; status: string };
+      expect(body.id).toBe(videoId);
+      expect(body.status).toBe('processing');
+    });
+
+    it('returns 409 when the video is not in draft status', async () => {
+      const accessToken = await registerConfirmAndLogin('notdraft@example.com');
+      const videoId = await initiateVideo(accessToken);
+      const etag = await uploadSinglePart(accessToken, videoId);
+      await request(app.getHttpServer())
+        .post(`/videos/${videoId}/complete`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ part_number: 1, etag }] });
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/complete`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ part_number: 1, etag }] });
+
+      const body = response.body as ErrorResponseBody;
+      expect(response.status).toBe(409);
+      expect(body.error).toBe('VIDEO_NOT_DRAFT');
+    });
+
+    it('returns 404 when the video belongs to another user', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'complete-owner@example.com',
+      );
+      const videoId = await initiateVideo(ownerToken);
+      const etag = await uploadSinglePart(ownerToken, videoId);
+      const intruderToken = await registerConfirmAndLogin(
+        'complete-intruder@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/complete`)
+        .set('Authorization', `Bearer ${intruderToken}`)
+        .send({ parts: [{ part_number: 1, etag }] });
+
+      const body = response.body as ErrorResponseBody;
+      expect(response.status).toBe(404);
+      expect(body.error).toBe('VIDEO_NOT_FOUND');
+    });
+  });
 });

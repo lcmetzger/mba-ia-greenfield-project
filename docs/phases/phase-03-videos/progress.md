@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/14 completed
+**SIs:** 4/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -24,9 +24,13 @@
 - **Observations:** none
 
 ### SI-03.4 — Entidade Video, enum de status, migration e exceções de domínio
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9/9 passing (video.entity.integration-spec.ts: 5, videos.module.spec.ts: 1, migrations.integration-spec.ts: 3); suíte completa 158/158 sem regressão
+- **Observations:**
+  - Migration `CreateVideos1783522092690` gerada via `npm run migration:generate` e aplicada ao banco (`npm run migration:run`).
+  - `migrations.integration-spec.ts` estendido para incluir a 3ª migration; fix loop (1 tentativa): fixtures de `short_code` nos testes excediam `varchar(12)` (corrigido) e `Promise.all` derrubando tabelas com FK entre si (`videos`→`channels`) causava deadlock no Postgres — trocado por drop sequencial.
+  - `cleanAllTables` (helper compartilhado) estendido com `DELETE FROM "videos"` — seguro porque a tabela já é permanente no banco de dev/test desde a migration aplicada nesta SI.
+  - Migration gerada pelo CLI veio com formatação fora do Prettier do projeto (aspas duplas, indentação) — corrigido com `eslint --fix`.
 
 ### SI-03.5 — Iniciação de upload (POST /videos)
 - **Status:** pending

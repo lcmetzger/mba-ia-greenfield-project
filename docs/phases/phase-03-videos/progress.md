@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/14 completed
+**SIs:** 9/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -64,9 +64,13 @@
   - `generateThumbnail` recebe `atSeconds` como parâmetro do caller (não calcula `min(duration/2, 5s)` internamente) — esse cálculo fica a cargo do worker (SI-03.9), que já tem a duração extraída.
 
 ### SI-03.9 — Worker de processamento (consumer + bootstrap)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3/3 passing (video-processing.module.spec.ts: 1 compilation, video-processing.processor.integration-spec.ts: 2 integration reais — processamento completo com ffmpeg/MinIO/Redis reais, e caminho de erro após esgotar retries)
+- **Observations:**
+  - `WorkerHost`/`@Processor` do `@nestjs/bullmq` registra o `Worker` real do BullMQ dentro de `onModuleInit` (via `BullRegistrar`). `Test.createTestingModule().compile()` NÃO dispara hooks de lifecycle (`onModuleInit`/`onApplicationBootstrap`) — só instancia o container DI; é preciso chamar `await module.init()` explicitamente depois do `compile()`. Sem isso, jobs enfileirados ficam parados (nenhum worker consumindo) e o teste só falha por timeout do polling, sem erro explícito — achado durante o fix loop desta SI (tentativa 1: `waitFor timed out` nos dois testes; tentativa 2, com `module.init()`: passou). Os testes de integração anteriores (SI-03.5/03.7) nunca precisaram disso porque só verificavam o job *enfileirado*, não *consumido*.
+  - `worker.module.ts`/`worker.main.ts` deliberadamente não importam `AuthModule` — o worker não tem superfície HTTP, só consome a fila via `NestFactory.createApplicationContext`.
+  - `THUMBNAIL_MAX_SECONDS = 5`: thumbnail tirado em `min(duration/2, 5s)`, cálculo feito no processor (a `FfmpegService.generateThumbnail` da SI-03.8 recebe o timestamp já calculado).
+  - `onFailed` (`@OnWorkerEvent('failed')`) só marca o vídeo como `ERROR` quando `job.attemptsMade >= job.opts.attempts` — evita marcar erro prematuramente durante retries em andamento (o job ainda vai tentar de novo).
 
 ### SI-03.10 — Endpoints de leitura (GET /videos, GET /videos/:id)
 - **Status:** pending

@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/14 completed
+**SIs:** 8/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -57,9 +57,11 @@
   - Teste de integração exercita o ciclo real completo (initiateUpload → PUT real via URL presignada → completeUpload) contra MinIO e Redis reais, verificando o job na fila via `queue.getJobs`.
 
 ### SI-03.8 — FfmpegService: extração de metadados e geração de thumbnail
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4/4 passing (ffmpeg.service.integration-spec.ts — ffmpeg/ffprobe reais, sem mocks)
+- **Observations:**
+  - Fixture `src/test/fixtures/sample-video.mp4` (2s, 320x240, h264+aac, ~30KB) gerada com `ffmpeg -f lavfi testsrc/sine` — sem depender de download externo, versionada no repo.
+  - `generateThumbnail` recebe `atSeconds` como parâmetro do caller (não calcula `min(duration/2, 5s)` internamente) — esse cálculo fica a cargo do worker (SI-03.9), que já tem a duração extraída.
 
 ### SI-03.9 — Worker de processamento (consumer + bootstrap)
 - **Status:** pending

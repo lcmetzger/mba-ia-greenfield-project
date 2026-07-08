@@ -37,6 +37,12 @@ describe('Database migrations (integration)', () => {
       ),
       dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
     ]);
+    // DROP TABLE does not drop enum types used by dropped columns — without
+    // this, a prior migration run leaves the type behind and CREATE TYPE in
+    // CreateAuthTokens.up() fails on the next run of this suite.
+    await dataSource.query(
+      `DROP TYPE IF EXISTS "verification_tokens_type_enum"`,
+    );
   });
 
   afterAll(async () => {

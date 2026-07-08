@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/14 completed
+**SIs:** 2/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -12,9 +12,11 @@
   - MinIO: `minio/minio` foi arquivado no Docker Hub (parou de publicar novas versões em 2025-10-23); pinado em `RELEASE.2025-09-07T16-13-09Z` (última tag oficial confirmada) em vez de `:latest`.
 
 ### SI-03.2 — StorageModule (wrapper S3/MinIO)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 6/6 passing (storage.keys.spec.ts: 2 unit, storage.module.spec.ts: 1 compilation, storage.service.integration-spec.ts: 3 integration reais contra MinIO)
+- **Observations:**
+  - Adicionado `StorageService.putObject` (não listado nas Technical actions originais da SI) — necessário para o worker (SI-03.9) subir o thumbnail via PUT direto, fora do fluxo multipart do vídeo original. Extensão natural do escopo "encapsular o S3Client atrás de um serviço de domínio" da própria SI.
+  - Teste de multipart real usa uma única parte (last-part semantics do S3/MinIO não exige tamanho mínimo de 5MB), evitando payloads grandes só para exercitar o mecanismo.
 
 ### SI-03.3 — QueueModule (wrapper BullMQ/Redis)
 - **Status:** pending

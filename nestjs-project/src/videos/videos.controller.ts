@@ -333,4 +333,93 @@ export class VideosController {
 
     await pipeline(object.Body as Readable, res);
   }
+
+  @Get(':shortCode/download')
+  @ApiOperation({
+    summary: 'Download a video',
+    description:
+      'Proxies the full video body from object storage as a file attachment.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Full video body, with Content-Disposition: attachment',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Video does not belong to the caller',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async download(
+    @CurrentUser() user: JwtPayload,
+    @Param('shortCode') shortCode: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const video = await this.videosService.resolveByShortCode(
+      user.sub,
+      shortCode,
+    );
+
+    const object = await this.storageService.getObjectStream(
+      this.storage.videosBucket,
+      video.storage_key,
+    );
+
+    const filename = this.buildDownloadFilename(
+      video.title,
+      video.original_filename,
+      video.content_type,
+    );
+    const headers: Record<string, string> = {
+      'Content-Type': video.content_type ?? 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    };
+    if (object.ContentLength !== undefined) {
+      headers['Content-Length'] = String(object.ContentLength);
+    }
+    res.writeHead(HttpStatus.OK, headers);
+
+    await pipeline(object.Body as Readable, res);
+  }
+
+  private buildDownloadFilename(
+    title: string,
+    originalFilename: string | null,
+    contentType: string | null,
+  ): string {
+    const sanitizedTitle =
+      title
+        .replace(/[^a-zA-Z0-9-_ ]/g, '')
+        .trim()
+        .replace(/\s+/g, '_') || 'video';
+    return `${sanitizedTitle}.${this.resolveExtension(originalFilename, contentType)}`;
+  }
+
+  private resolveExtension(
+    originalFilename: string | null,
+    contentType: string | null,
+  ): string {
+    const match = originalFilename
+      ? /\.([a-zA-Z0-9]+)$/.exec(originalFilename)
+      : null;
+    if (match) {
+      return match[1];
+    }
+
+    const subtype = contentType?.split('/')[1];
+    if (subtype) {
+      return subtype.split('+')[0];
+    }
+
+    return 'bin';
+  }
 }

@@ -581,4 +581,133 @@ describe('Videos (e2e)', () => {
       expect(errBody.error).toBe('VIDEO_NOT_FOUND');
     });
   });
+
+  describe('GET /videos/:shortCode/download', () => {
+    async function initiateAndMarkReady(
+      accessToken: string,
+      body: Buffer,
+      title = 'Downloadable video',
+    ): Promise<{ videoId: string; shortCode: string }> {
+      const initResponse = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title,
+          content_type: 'video/mp4',
+          size_bytes: body.length,
+          original_filename: 'video.mp4',
+        });
+      const { id, short_code } =
+        initResponse.body as InitiateUploadResponseBody;
+
+      const partsResponse = await request(app.getHttpServer())
+        .post(`/videos/${id}/upload-parts`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ part_numbers: [1] });
+      const { url } = (
+        partsResponse.body as { parts: { part_number: number; url: string }[] }
+      ).parts[0];
+      const putResponse = await fetch(url, {
+        method: 'PUT',
+        body: new Uint8Array(body),
+      });
+      const etag = putResponse.headers.get('etag') as string;
+
+      await request(app.getHttpServer())
+        .post(`/videos/${id}/complete`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ part_number: 1, etag }] });
+
+      await dataSource.query(
+        `UPDATE videos SET status = 'ready' WHERE id = $1`,
+        [id],
+      );
+
+      return { videoId: id, shortCode: short_code };
+    }
+
+    it('returns 200 with Content-Disposition: attachment containing the video title', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'download-full@example.com',
+      );
+      const body = Buffer.from('hello streamtube video bytes');
+      const { shortCode } = await initiateAndMarkReady(
+        accessToken,
+        body,
+        'My Great Video!',
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/videos/${shortCode}/download`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .buffer(true)
+        .parse(binaryParser);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-disposition']).toContain('attachment');
+      expect(response.headers['content-disposition']).toContain(
+        'My_Great_Video',
+      );
+      expect((response.body as Buffer).toString()).toBe(body.toString());
+    });
+
+    it('returns 403 VIDEO_NOT_OWNED when the video belongs to another user', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'download-owner@example.com',
+      );
+      const { shortCode } = await initiateAndMarkReady(
+        ownerToken,
+        Buffer.from('owner only bytes'),
+      );
+      const intruderToken = await registerConfirmAndLogin(
+        'download-intruder@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/videos/${shortCode}/download`)
+        .set('Authorization', `Bearer ${intruderToken}`);
+
+      const errBody = response.body as ErrorResponseBody;
+      expect(response.status).toBe(403);
+      expect(errBody.error).toBe('VIDEO_NOT_OWNED');
+    });
+
+    it('returns 409 VIDEO_NOT_READY when the video is still processing', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'download-notready@example.com',
+      );
+      const initResponse = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Not ready',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          original_filename: 'video.mp4',
+        });
+      const { short_code } = initResponse.body as InitiateUploadResponseBody;
+
+      const response = await request(app.getHttpServer())
+        .get(`/videos/${short_code}/download`)
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      const errBody = response.body as ErrorResponseBody;
+      expect(response.status).toBe(409);
+      expect(errBody.error).toBe('VIDEO_NOT_READY');
+    });
+
+    it('returns 404 VIDEO_NOT_FOUND when the shortCode does not exist', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'download-missing@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/videos/doesnotexist2/download')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      const errBody = response.body as ErrorResponseBody;
+      expect(response.status).toBe(404);
+      expect(errBody.error).toBe('VIDEO_NOT_FOUND');
+    });
+  });
 });

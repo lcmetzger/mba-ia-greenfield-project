@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/14 completed
+**SIs:** 12/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -89,9 +89,11 @@
   - E2E não tem worker rodando (só `AppModule`), então os testes que precisam de um vídeo `ready` fazem upload real (draft→parts→complete) e então promovem o status via `UPDATE videos SET status='ready'` direto no banco, simulando o que o worker (SI-03.9) faria.
 
 ### SI-03.12 — Download (GET /videos/:shortCode/download)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 24/24 passing (test/videos.e2e-spec.ts — suíte completa, 4 novos + 20 pré-existentes sem regressão)
+- **Observations:**
+  - `Content-Disposition: attachment; filename="{título sanitizado}.{ext}"` — título sanitizado remove qualquer caractere fora de `[a-zA-Z0-9-_ ]` e troca espaços por `_`; extensão vem de `original_filename` (regex no sufixo) com fallback para o subtipo de `content_type` (ex.: `video/mp4` → `mp4`) e fallback final `bin`. Nenhum desses detalhes está no `### Validation Rules — Videos` do plano — decisão de implementação, não uma regra documentada.
+  - Reaproveita `VideosService.resolveByShortCode` (mesma checagem 404/403/409 de posse/status da SI-03.11) e `StorageService.getObjectStream` sem `Range` (corpo completo sempre) — só troca o `Content-Disposition`.
 
 ### SI-03.13 — Reprocessamento (POST /videos/:id/reprocess)
 - **Status:** pending

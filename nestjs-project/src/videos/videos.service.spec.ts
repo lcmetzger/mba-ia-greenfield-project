@@ -5,6 +5,8 @@ import {
   ChannelNotFoundException,
   FileTooLargeException,
   UploadInitiationFailedException,
+  VideoNotDraftException,
+  VideoNotFoundException,
 } from '../common/exceptions/domain.exception';
 import type { ChannelsService } from '../channels/channels.service';
 import type { StorageService } from '../storage/storage.service';
@@ -24,9 +26,11 @@ function makeConfig(): ConfigType<typeof storageConfig> {
 }
 
 function makeService(
-  videoRepository: Partial<Record<'create' | 'save', jest.Mock>>,
+  videoRepository: Partial<Record<'create' | 'save' | 'findOne', jest.Mock>>,
   channelsService: Partial<Record<'findByUserId', jest.Mock>>,
-  storageService: Partial<Record<'createMultipartUpload', jest.Mock>>,
+  storageService: Partial<
+    Record<'createMultipartUpload' | 'presignUploadPart', jest.Mock>
+  >,
 ): VideosService {
   return new VideosService(
     videoRepository as unknown as Repository<Video>,
@@ -136,6 +140,130 @@ describe('VideosService', () => {
 
       await expect(service.initiateUpload('user-id', baseDto)).rejects.toThrow(
         UploadInitiationFailedException,
+      );
+    });
+  });
+
+  describe('getUploadPartUrls', () => {
+    const draftVideo = {
+      id: 'video-id',
+      channel_id: 'channel-id',
+      status: VideoStatus.DRAFT,
+      storage_key: 'videos/video-id/original',
+      upload_id: 'upload-id',
+    } as Video;
+
+    it('throws ChannelNotFoundException when the user has no channel', async () => {
+      const videoRepository = { findOne: jest.fn() };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue(null),
+      };
+      const storageService = { presignUploadPart: jest.fn() };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(
+        service.getUploadPartUrls('user-id', 'video-id', [1]),
+      ).rejects.toThrow(ChannelNotFoundException);
+    });
+
+    it('throws VideoNotFoundException when the video does not exist', async () => {
+      const videoRepository = { findOne: jest.fn().mockResolvedValue(null) };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = { presignUploadPart: jest.fn() };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(
+        service.getUploadPartUrls('user-id', 'video-id', [1]),
+      ).rejects.toThrow(VideoNotFoundException);
+    });
+
+    it('throws VideoNotFoundException when the video belongs to another channel', async () => {
+      const videoRepository = {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...draftVideo, channel_id: 'other-channel' }),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = { presignUploadPart: jest.fn() };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(
+        service.getUploadPartUrls('user-id', 'video-id', [1]),
+      ).rejects.toThrow(VideoNotFoundException);
+    });
+
+    it('throws VideoNotDraftException when the video is not in draft status', async () => {
+      const videoRepository = {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...draftVideo, status: VideoStatus.READY }),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = { presignUploadPart: jest.fn() };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      await expect(
+        service.getUploadPartUrls('user-id', 'video-id', [1]),
+      ).rejects.toThrow(VideoNotDraftException);
+    });
+
+    it('returns one presigned url per requested part number', async () => {
+      const videoRepository = {
+        findOne: jest.fn().mockResolvedValue(draftVideo),
+      };
+      const channelsService = {
+        findByUserId: jest.fn().mockResolvedValue({ id: 'channel-id' }),
+      };
+      const storageService = {
+        presignUploadPart: jest
+          .fn()
+          .mockImplementation((_b, _k, _u, partNumber: number) =>
+            Promise.resolve(`https://minio/part-${partNumber}`),
+          ),
+      };
+      const service = makeService(
+        videoRepository,
+        channelsService,
+        storageService,
+      );
+
+      const result = await service.getUploadPartUrls(
+        'user-id',
+        'video-id',
+        [1, 2],
+      );
+
+      expect(result).toEqual([
+        { part_number: 1, url: 'https://minio/part-1' },
+        { part_number: 2, url: 'https://minio/part-2' },
+      ]);
+      expect(storageService.presignUploadPart).toHaveBeenCalledWith(
+        'streamtube-videos',
+        'videos/video-id/original',
+        'upload-id',
+        1,
       );
     });
   });

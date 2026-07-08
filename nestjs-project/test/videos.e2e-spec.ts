@@ -171,4 +171,68 @@ describe('Videos (e2e)', () => {
       expect(response.status).toBe(400);
     });
   });
+
+  describe('POST /videos/:id/upload-parts', () => {
+    async function initiateVideo(accessToken: string): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Video for parts',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          original_filename: 'video.mp4',
+        });
+      return (response.body as InitiateUploadResponseBody).id;
+    }
+
+    it('returns one presigned url per requested part number', async () => {
+      const accessToken = await registerConfirmAndLogin('parts@example.com');
+      const videoId = await initiateVideo(accessToken);
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/upload-parts`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ part_numbers: [1, 2] });
+
+      expect(response.status).toBe(200);
+      const body = response.body as {
+        parts: { part_number: number; url: string }[];
+      };
+      expect(body.parts).toHaveLength(2);
+      expect(body.parts[0].part_number).toBe(1);
+      expect(body.parts[0].url).toContain('http');
+    });
+
+    it('returns 404 when the video belongs to another user', async () => {
+      const ownerToken = await registerConfirmAndLogin('owner@example.com');
+      const videoId = await initiateVideo(ownerToken);
+      const intruderToken = await registerConfirmAndLogin(
+        'intruder@example.com',
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/upload-parts`)
+        .set('Authorization', `Bearer ${intruderToken}`)
+        .send({ part_numbers: [1] });
+
+      const body = response.body as ErrorResponseBody;
+      expect(response.status).toBe(404);
+      expect(body.error).toBe('VIDEO_NOT_FOUND');
+    });
+
+    it('returns 400 when part_numbers is empty', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'emptyparts@example.com',
+      );
+      const videoId = await initiateVideo(accessToken);
+
+      const response = await request(app.getHttpServer())
+        .post(`/videos/${videoId}/upload-parts`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ part_numbers: [] });
+
+      expect(response.status).toBe(400);
+    });
+  });
 });

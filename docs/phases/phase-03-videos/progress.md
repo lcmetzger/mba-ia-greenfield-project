@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/14 completed
+**SIs:** 6/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -42,9 +42,12 @@
   - `test/videos.e2e-spec.ts` e `videos.service.spec.ts` tipados explicitamente (sem `any` solto) para passar no lint estrito do projeto — diverge levemente do padrão já usado em `test/auth.e2e-spec.ts` (que tem 48 erros de lint pré-existentes, fora do escopo desta fase, descobertos ao investigar este ponto).
 
 ### SI-03.6 — URLs de parte (POST /videos/:id/upload-parts)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16/16 passing (videos.service.spec.ts: 9 unit total, test/videos.e2e-spec.ts: 7 e2e total)
+- **Observations:**
+  - Resolvida uma inconsistência interna do próprio plano: a Technical action da SI dizia "checa posse (VideoNotOwnedException)", mas o Error Catalog/API Contracts documentam `404 VIDEO_NOT_FOUND` (não 403) para posse errada em rotas por `id` interno (upload-parts/complete/detail/reprocess) — segui o Error Catalog (fonte de verdade mais específica) e criei `findOwnedVideoOrThrow` retornando sempre `VideoNotFoundException` para "não existe" ou "não é meu". As rotas por `shortCode` (stream/download) permanecem com a distinção 404 vs 403 conforme documentado.
+  - Retrofit: adicionei documentação Swagger completa (`@ApiTags`, `@ApiBearerAuth`, `@ApiOperation`, `@ApiResponse` por status) no `VideosController`, incluindo o endpoint `POST /videos` da SI-03.5 que tinha ficado sem — exigido por `nestjs-controllers.md` e não coberto na SI original.
+  - `POST /videos/:id/upload-parts` usa `@HttpCode(HttpStatus.OK)` (200) — o padrão do NestJS para `@Post()` é 201, mas o plano documenta 200 para este endpoint (não cria um recurso novo).
 
 ### SI-03.7 — Conclusão do upload (POST /videos/:id/complete)
 - **Status:** pending

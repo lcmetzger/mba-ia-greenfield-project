@@ -8,6 +8,8 @@ import {
   ChannelNotFoundException,
   FileTooLargeException,
   UploadInitiationFailedException,
+  VideoNotDraftException,
+  VideoNotFoundException,
 } from '../common/exceptions/domain.exception';
 import { buildVideoKey } from '../storage/storage.keys';
 import { StorageService } from '../storage/storage.service';
@@ -67,5 +69,53 @@ export class VideosService {
     draft.storage_key = storageKey;
     draft.upload_id = uploadId;
     return this.videoRepository.save(draft);
+  }
+
+  async getUploadPartUrls(
+    userId: string,
+    videoId: string,
+    partNumbers: number[],
+  ): Promise<{ part_number: number; url: string }[]> {
+    const video = await this.findOwnedVideoOrThrow(userId, videoId);
+    if (video.status !== VideoStatus.DRAFT) {
+      throw new VideoNotDraftException();
+    }
+
+    return Promise.all(
+      partNumbers.map(async (partNumber) => ({
+        part_number: partNumber,
+        url: await this.storageService.presignUploadPart(
+          this.storage.videosBucket,
+          video.storage_key,
+          video.upload_id as string,
+          partNumber,
+        ),
+      })),
+    );
+  }
+
+  /**
+   * Resolves a video by its internal id, scoped to the caller's channel.
+   * Non-existence and wrong-ownership both surface as VIDEO_NOT_FOUND (404)
+   * per the Error Catalog — these are owner-only management routes, not
+   * shareable links, so there is nothing to distinguish for the caller.
+   */
+  private async findOwnedVideoOrThrow(
+    userId: string,
+    videoId: string,
+  ): Promise<Video> {
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel) {
+      throw new ChannelNotFoundException();
+    }
+
+    const video = await this.videoRepository.findOne({
+      where: { id: videoId },
+    });
+    if (!video || video.channel_id !== channel.id) {
+      throw new VideoNotFoundException();
+    }
+
+    return video;
   }
 }

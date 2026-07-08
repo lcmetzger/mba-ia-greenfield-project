@@ -28,6 +28,8 @@ sources_mtime:
   docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-07T22:03:16-03:00"
 ---
 
+# phase-03-videos — Library References
+
 > **Nota de processo:** o MCP do context7 não está conectado nesta sessão (`.mcp.json` só configura o servidor `postgres`). A documentação abaixo foi levantada via WebSearch/WebFetch contra fontes primárias (docs oficiais do BullMQ, NestJS, AWS SDK v3, npm registry) em vez de context7. Recomenda-se reconfirmar via context7 assim que o MCP estiver disponível no ambiente.
 
 ## @nestjs/bullmq

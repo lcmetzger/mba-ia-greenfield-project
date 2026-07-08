@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
-**SIs:** 13/14 completed
+**Status:** completed
+**SIs:** 14/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -104,6 +104,9 @@
   - E2E precisou de acesso direto à fila (`getQueueToken(VIDEO_PROCESSING_QUEUE)`) para verificar que o job foi reenfileirado, já que não há worker rodando nesse contexto — seguiu o mesmo padrão já usado em `videos.service.integration-spec.ts`. Adicionado `videoQueue.drain(true)` ao `beforeEach` compartilhado do arquivo e2e (sem impacto nos testes pré-existentes, confirmado pela suíte completa).
 
 ### SI-03.14 — E2E de ciclo completo e atualização do CLAUDE.md
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 1/1 passing (test/videos-lifecycle.e2e-spec.ts — upload real → worker real → ready → stream Range 206 → download 200, todos contra infraestrutura real)
+- **Observations:**
+  - O container `video-worker` do Compose fica ocioso (`tail -f /dev/null`, sem `command:` no service) até ser iniciado manualmente — mesma convenção já usada por `nestjs-api` (não subir processos de longa duração automaticamente). Para o teste de ciclo completo real, o worker roda **in-process** dentro do próprio processo do Jest (um segundo `TestingModule` só com `VideoProcessingModule`, `.init()`ado), reaproveitando o mesmo padrão já validado na SI-03.9 — evita depender do container `video-worker` estar rodando manualmente para a suíte de testes passar de forma determinística/repetível.
+  - `nestjs-project/CLAUDE.md`: adicionada seção "Video Upload & Processing" (módulo, tabela de endpoints, `StorageModule`, `QueueModule`, worker, env vars) e as 3 novas entradas de serviço (`minio`, `redis`, `video-worker`) na lista de "Services".
+  - `CLAUDE.md` raiz: corrigido `**Message Queue** (TBD)` → `**Message Queue** (BullMQ/Redis)` no diagrama C4 — era o único ponto do documento que citava algo "a decidir" que a Fase 03 já resolveu.

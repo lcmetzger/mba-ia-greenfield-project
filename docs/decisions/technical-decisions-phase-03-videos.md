@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-07-08
 scope_description: "Fila de processamento, estratégia de upload de 10GB, organização do object storage, worker de vídeo (metadados + thumbnail), URL única, streaming/download e ciclo de status do vídeo."
 ---
@@ -44,7 +44,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **A (BullMQ + Redis)** — o caso de uso é um único tipo de job com necessidade real de retry/backoff/DLQ, exatamente o ponto forte do BullMQ, com integração oficial NestJS. RabbitMQ traria poder de roteamento não utilizado neste escopo; pg-boss evitaria um container novo, mas acoplaria a carga de processamento ao Postgres transacional do domínio e tem integração/observabilidade mais fraca — não compensa a economia de um container Redis, que é trivial de operar em Compose.
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ + Redis)
+**Libraries:** @nestjs/bullmq, bullmq, ioredis
 
 ---
 
@@ -75,7 +76,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **A (dois buckets, chave por UUID do vídeo)** — separa a política de acesso desde já (vídeo original nunca público; thumbnail plausivelmente público em fase futura), evitando reconfigurar policies depois, e a chave derivada do `Video.id` (já um UUID gerado pela entidade) não exige nenhum mecanismo novo de geração de identificador.
 
-**Decision:** _[pending]_
+**Decision:** A (dois buckets, chave por UUID do vídeo)
+**Libraries:** —
 
 ---
 
@@ -106,7 +108,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **A (multipart upload direto ao storage via URLs pré-assinadas)** — é a única opção que garante que o corpo do arquivo nunca passa pelo processo da API (Option B mantém uma conexão HTTP ocupada por até 10GB, o que ainda é o tipo de acoplamento que o requisito quer evitar) e resolve retomada de upload nativamente via reenvio de partes individuais, sem introduzir um componente de infraestrutura redundante (Option C).
 
-**Decision:** _[pending]_
+**Decision:** A (multipart upload direto ao storage via URLs pré-assinadas)
+**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
 
 ---
 
@@ -137,7 +140,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **A (segundo bootstrap NestJS, mesmo codebase, container próprio)** — reaproveita integralmente os padrões e a infraestrutura de código já validados nas Fases 01/02 (entidades, config, exceções de domínio), evitando duplicar lógica ou introduzir uma segunda stack só para chamar dois comandos de sistema (`ffprobe`/`ffmpeg`) que qualquer linguagem invoca da mesma forma trivial via `child_process`.
 
-**Decision:** _[pending]_
+**Decision:** A (segundo bootstrap NestJS, mesmo codebase, container próprio)
+**Libraries:** —
 
 ---
 
@@ -168,7 +172,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **B (código curto dedicado + proxy autenticado)** — é a única combinação que atende ao requisito explícito de URL "curta" do `project-plan.md` sem abrir mão da checagem de posse a cada acesso (necessária enquanto não existe conceito de vídeo público/unlisted, que só chega na Fase 04). O custo adicional (uma dependência pequena e bem estabelecida, mais uma coluna com índice único) é baixo frente ao ganho de aderência ao requisito documentado.
 
-**Decision:** _[pending]_
+**Decision:** B (código curto dedicado + proxy autenticado)
+**Libraries:** @aws-sdk/client-s3, nanoid
 
 ---
 
@@ -199,7 +204,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **B (enum simples + reprocessamento manual)** — atende ao requisito explícito do enunciado ("o que acontece em caso de falha no processamento") sem o custo de reupload de um arquivo grande, com uma adição pequena e bem contida (um endpoint) sobre a Option A. A Option C adiciona granularidade sem consumidor nesta fase — melhor avaliar quando a Fase 04 trouxer UI de progresso de upload.
 
-**Decision:** _[pending]_
+**Decision:** B (enum simples + reprocessamento manual)
+**Libraries:** —
 
 ---
 
@@ -207,9 +213,9 @@ _Subprojects in scope:_
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Backend | Tecnologia de fila de processamento | A (BullMQ + Redis) | _[pending]_ |
-| TD-02 | Backend | Organização de buckets e chaves no object storage | A (dois buckets, chave por UUID) | _[pending]_ |
-| TD-03 | Backend | Estratégia de upload de 10GB sem travar a API | A (multipart via URLs pré-assinadas) | _[pending]_ |
-| TD-04 | Backend | Execução do worker e extração de metadados/thumbnail | A (segundo bootstrap NestJS, mesmo codebase) | _[pending]_ |
-| TD-05 | Backend | URL única e estratégia de streaming/download | B (código curto + proxy autenticado) | _[pending]_ |
-| TD-06 | Backend | Ciclo de status do vídeo e tratamento de falha | B (enum simples + reprocessamento manual) | _[pending]_ |
+| TD-01 | Backend | Tecnologia de fila de processamento | A (BullMQ + Redis) | A (BullMQ + Redis) |
+| TD-02 | Backend | Organização de buckets e chaves no object storage | A (dois buckets, chave por UUID) | A (dois buckets, chave por UUID) |
+| TD-03 | Backend | Estratégia de upload de 10GB sem travar a API | A (multipart via URLs pré-assinadas) | A (multipart via URLs pré-assinadas) |
+| TD-04 | Backend | Execução do worker e extração de metadados/thumbnail | A (segundo bootstrap NestJS, mesmo codebase) | A (segundo bootstrap NestJS, mesmo codebase) |
+| TD-05 | Backend | URL única e estratégia de streaming/download | B (código curto + proxy autenticado) | B (código curto + proxy autenticado) |
+| TD-06 | Backend | Ciclo de status do vídeo e tratamento de falha | B (enum simples + reprocessamento manual) | B (enum simples + reprocessamento manual) |

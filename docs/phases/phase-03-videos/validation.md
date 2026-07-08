@@ -2,35 +2,43 @@
 kind: phase
 name: phase-03-videos
 status: dirty
-issue_count: 8
+issue_count: 0
 sources_mtime:
   docs/phases/phase-03-videos/context.md: "2026-07-07T21:56:21-03:00"
   docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-07T21:41:19-03:00"
 issues:
   - id: AMB-1
-    status: open
+    status: resolved
     summary: "Fronteira entre 'rascunho/pronto' (Fase 03) e 'rascunho → publicação' (Fase 04) não está explícita"
+    resolved_by: clarification
   - id: AMB-2
-    status: open
+    status: resolved
     summary: "Controle de acesso a streaming/download não especificado antes do modelo de visibilidade da Fase 04"
+    resolved_by: clarification
   - id: OQ-1
-    status: open
+    status: resolved
     summary: "TD-01 pending — Tecnologia de fila de processamento em segundo plano"
+    resolved_by: phase-03-videos/TD-01
   - id: OQ-2
-    status: open
+    status: resolved
     summary: "TD-02 pending — Organização de buckets e chaves no object storage"
+    resolved_by: phase-03-videos/TD-02
   - id: OQ-3
-    status: open
+    status: resolved
     summary: "TD-03 pending — Estratégia de upload de vídeos de até 10GB sem travar a API"
+    resolved_by: phase-03-videos/TD-03
   - id: OQ-4
-    status: open
+    status: resolved
     summary: "TD-04 pending — Execução do worker e extração de metadados/thumbnail"
+    resolved_by: phase-03-videos/TD-04
   - id: OQ-5
-    status: open
+    status: resolved
     summary: "TD-05 pending — URL única por vídeo e estratégia de streaming/download"
+    resolved_by: phase-03-videos/TD-05
   - id: OQ-6
-    status: open
+    status: resolved
     summary: "TD-06 pending — Ciclo de status do vídeo e tratamento de falha no processamento"
+    resolved_by: phase-03-videos/TD-06
 advisories: []
 ---
 
@@ -44,8 +52,7 @@ _None._
 
 ### Ambiguities
 
-- **AMB-1** — A capacidade "Pré-cadastro automático do vídeo como rascunho ao iniciar o upload" não deixa explícito se o status "pronto" (ready) desta fase é um conceito puramente técnico (upload/processamento concluído) ou se se sobrepõe ao fluxo "rascunho → publicação" que a Fase 04 (Gerenciamento de Vídeos e Canal) possui como capacidade própria. Explicit choice: confirmar que "rascunho" na Fase 03 cobre apenas o ciclo técnico (draft → processing → ready/error, sem noção de "publicado"), e que "publicação" é responsabilidade exclusiva da Fase 04 — registrar essa fronteira no plano (ex.: nota no Data Model ou no ciclo de status de TD-06) para não ser reaberta durante o `/plan-build` da Fase 04.
-- **AMB-2** — As capacidades "Reprodução via streaming (sem necessidade de download completo)" e "Download do vídeo pelo usuário" não especificam quem pode acessar um vídeo nesta fase. A Fase 04 introduz "Visibilidade do vídeo: público ou unlisted", que ainda não existe na Fase 03. Explicit choice: confirmar explicitamente (via nota na TD-05 ou no Data Model) que, nesta fase, apenas o dono do canal pode acessar streaming/download do próprio vídeo — sem conceito de público/unlisted — para que o plano não assuma acesso público por omissão.
+_None._
 
 ### Missing Decisions
 
@@ -61,12 +68,7 @@ _None._
 
 ### Unresolved Open Questions
 
-- **OQ-1** — TD-01 pending — Tecnologia de fila de processamento em segundo plano. Resolution: fill the **Decision:** field of TD-01 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`.
-- **OQ-2** — TD-02 pending — Organização de buckets e chaves no object storage. Resolution: fill the **Decision:** field of TD-02 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`.
-- **OQ-3** — TD-03 pending — Estratégia de upload de vídeos de até 10GB sem travar a API. Resolution: fill the **Decision:** field of TD-03 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`.
-- **OQ-4** — TD-04 pending — Execução do worker e extração de metadados/thumbnail. Resolution: fill the **Decision:** field of TD-04 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`.
-- **OQ-5** — TD-05 pending — URL única por vídeo e estratégia de streaming/download. Resolution: fill the **Decision:** field of TD-05 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`.
-- **OQ-6** — TD-06 pending — Ciclo de status do vídeo e tratamento de falha no processamento. Resolution: fill the **Decision:** field of TD-06 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`.
+_None._
 
 ### UI Coverage Gaps
 
@@ -74,4 +76,11 @@ _None._ (no UI scope detected for this phase — `## UI Inventory` not present i
 
 ## Resolved Issues
 
-_No issues resolved yet._
+- **AMB-1** _(resolved_by clarification)_ — Confirmado: "rascunho"/"pronto" na Fase 03 cobre apenas o ciclo técnico (draft → processing → ready/error, sem noção de "publicado"); "publicação" é responsabilidade exclusiva da Fase 04.
+- **AMB-2** _(resolved_by clarification)_ — Confirmado: nesta fase, apenas o dono do canal pode acessar streaming/download do próprio vídeo — sem conceito de público/unlisted (que só chega na Fase 04).
+- **OQ-1** _(resolved_by phase-03-videos/TD-01)_ — Tecnologia de fila de processamento em segundo plano: A (BullMQ + Redis).
+- **OQ-2** _(resolved_by phase-03-videos/TD-02)_ — Organização de buckets e chaves no object storage: A (dois buckets, chave por UUID).
+- **OQ-3** _(resolved_by phase-03-videos/TD-03)_ — Estratégia de upload de vídeos de até 10GB sem travar a API: A (multipart upload direto via URLs pré-assinadas).
+- **OQ-4** _(resolved_by phase-03-videos/TD-04)_ — Execução do worker e extração de metadados/thumbnail: A (segundo bootstrap NestJS, mesmo codebase).
+- **OQ-5** _(resolved_by phase-03-videos/TD-05)_ — URL única por vídeo e estratégia de streaming/download: B (código curto + proxy autenticado).
+- **OQ-6** _(resolved_by phase-03-videos/TD-06)_ — Ciclo de status do vídeo e tratamento de falha no processamento: B (enum simples + reprocessamento manual).

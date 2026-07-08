@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/14 completed
+**SIs:** 11/14 completed
 
 ### SI-03.1 — Dependências, configuração e infraestrutura Docker
 - **Status:** completed
@@ -80,9 +80,13 @@
   - `VideosService.findById` reaproveita o `findOwnedVideoOrThrow` privado já usado pelas SIs 03.6/03.7 — mesma semântica de posse (404 uniforme para inexistente/não-dono).
 
 ### SI-03.11 — Streaming (GET /videos/:shortCode/stream)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22/22 passing (videos.streaming.integration-spec.ts: 2 integration reais contra MinIO, test/videos.e2e-spec.ts: 20 e2e total — 5 novos + 15 pré-existentes sem regressão)
+- **Observations:**
+  - `VideosController.stream` chama `StorageService.getObjectStream` diretamente (per Technical action explícita da SI) e faz *pipe* via `stream/promises.pipeline` — não passa por `VideosService` para o proxy de bytes, só para a checagem de posse/status (`resolveByShortCode`).
+  - `VideosService.resolveByShortCode` distingue 404 (não existe) de 403 (existe mas não é do usuário) — diferente do `findOwnedVideoOrThrow` usado nas rotas por `id` interno (que unifica os dois em 404), conforme já documentado na SI-03.6: rotas por `shortCode` são links compartilháveis, então a distinção importa.
+  - `videos.streaming.integration-spec.ts` chama `VideosController.stream` diretamente (não via HTTP) com um `Response` fake (`PassThrough` + `writeHead` stubado) para verificar os bytes exatos devolvidos em streaming completo e em `Range` parcial, contra MinIO real — complementar ao e2e, que verifica status codes/headers/autorização via HTTP real.
+  - E2E não tem worker rodando (só `AppModule`), então os testes que precisam de um vídeo `ready` fazem upload real (draft→parts→complete) e então promovem o status via `UPDATE videos SET status='ready'` direto no banco, simulando o que o worker (SI-03.9) faria.
 
 ### SI-03.12 — Download (GET /videos/:shortCode/download)
 - **Status:** pending

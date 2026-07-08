@@ -13,6 +13,8 @@ import {
   UploadInitiationFailedException,
   VideoNotDraftException,
   VideoNotFoundException,
+  VideoNotOwnedException,
+  VideoNotReadyException,
 } from '../common/exceptions/domain.exception';
 import {
   VIDEO_PROCESSING_QUEUE,
@@ -163,6 +165,33 @@ export class VideosService {
 
   async findById(userId: string, videoId: string): Promise<Video> {
     return this.findOwnedVideoOrThrow(userId, videoId);
+  }
+
+  /**
+   * Resolves a video by its public short_code, for shareable-link routes
+   * (stream/download). Unlike findOwnedVideoOrThrow, "not found" (404) and
+   * "not owned" (403) are distinguished per the Error Catalog, since these
+   * are meant to read as a real access-control boundary, not just an
+   * internal management guard.
+   */
+  async resolveByShortCode(userId: string, shortCode: string): Promise<Video> {
+    const video = await this.videoRepository.findOne({
+      where: { short_code: shortCode },
+    });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel || video.channel_id !== channel.id) {
+      throw new VideoNotOwnedException();
+    }
+
+    if (video.status !== VideoStatus.READY) {
+      throw new VideoNotReadyException();
+    }
+
+    return video;
   }
 
   /**

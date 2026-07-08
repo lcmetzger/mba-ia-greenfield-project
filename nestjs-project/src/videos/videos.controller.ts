@@ -1,11 +1,16 @@
+import type { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import {
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
+  Req,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -14,9 +19,13 @@ import {
   ApiTags,
   getSchemaPath,
 } from '@nestjs/swagger';
+import type { ConfigType } from '@nestjs/config';
+import type { Request, Response } from 'express';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import storageConfig from '../config/storage.config';
+import { StorageService } from '../storage/storage.service';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { UploadPartsDto } from './dto/upload-parts.dto';
@@ -26,7 +35,12 @@ import { VideosService } from './videos.service';
 @ApiBearerAuth('access-token')
 @Controller('videos')
 export class VideosController {
-  constructor(private readonly videosService: VideosService) {}
+  constructor(
+    private readonly videosService: VideosService,
+    private readonly storageService: StorageService,
+    @Inject(storageConfig.KEY)
+    private readonly storage: ConfigType<typeof storageConfig>,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -253,5 +267,70 @@ export class VideosController {
       created_at: video.created_at,
       updated_at: video.updated_at,
     };
+  }
+
+  @Get(':shortCode/stream')
+  @ApiOperation({
+    summary: 'Stream a video',
+    description:
+      'Proxies the video bytes from object storage, honoring the Range header for partial content (seeking).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Full video body (no Range header sent)',
+  })
+  @ApiResponse({
+    status: 206,
+    description: 'Partial video body for the requested byte range',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Video does not belong to the caller',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async stream(
+    @CurrentUser() user: JwtPayload,
+    @Param('shortCode') shortCode: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const video = await this.videosService.resolveByShortCode(
+      user.sub,
+      shortCode,
+    );
+    const range = req.headers.range;
+
+    const object = await this.storageService.getObjectStream(
+      this.storage.videosBucket,
+      video.storage_key,
+      range,
+    );
+
+    const headers: Record<string, string> = {
+      'Content-Type': video.content_type ?? 'application/octet-stream',
+      'Accept-Ranges': 'bytes',
+    };
+    if (object.ContentLength !== undefined) {
+      headers['Content-Length'] = String(object.ContentLength);
+    }
+
+    if (range && object.ContentRange) {
+      headers['Content-Range'] = object.ContentRange;
+      res.writeHead(HttpStatus.PARTIAL_CONTENT, headers);
+    } else {
+      res.writeHead(HttpStatus.OK, headers);
+    }
+
+    await pipeline(object.Body as Readable, res);
   }
 }

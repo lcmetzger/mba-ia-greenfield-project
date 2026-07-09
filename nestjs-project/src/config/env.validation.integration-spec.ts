@@ -1,3 +1,4 @@
+import type * as Joi from 'joi';
 import { envValidationSchema } from './env.validation';
 
 const requiredEnv = {
@@ -10,7 +11,13 @@ const requiredEnv = {
   STORAGE_SECRET_KEY: 'storage-secret-key',
 };
 
-const validate = (env: Record<string, string>) =>
+interface ValidatedEnv {
+  SWAGGER_ENABLED: string;
+}
+
+const validate = (
+  env: Record<string, string>,
+): { value: ValidatedEnv; error: Joi.ValidationError | undefined } =>
   envValidationSchema.validate(
     { ...requiredEnv, ...env },
     { allowUnknown: true, abortEarly: false },

@@ -48,3 +48,73 @@ export class TokenReuseDetectedException extends DomainException {
     );
   }
 }
+
+export class ChannelNotFoundException extends DomainException {
+  constructor() {
+    super(
+      'CHANNEL_NOT_FOUND',
+      404,
+      'No channel associated with the authenticated user',
+    );
+  }
+}
+
+export class FileTooLargeException extends DomainException {
+  constructor() {
+    super('FILE_TOO_LARGE', 400, 'Declared file size exceeds the 10GB limit');
+  }
+}
+
+export class UploadInitiationFailedException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_INITIATION_FAILED',
+      502,
+      'Failed to initiate multipart upload on the object storage',
+    );
+  }
+}
+
+export class VideoNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video not found');
+  }
+}
+
+export class VideoNotOwnedException extends DomainException {
+  constructor() {
+    super(
+      'VIDEO_NOT_OWNED',
+      403,
+      'Video does not belong to the authenticated user channel',
+    );
+  }
+}
+
+export class VideoNotDraftException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_DRAFT', 409, 'Video is not in draft status');
+  }
+}
+
+export class UploadCompletionFailedException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_COMPLETION_FAILED',
+      502,
+      'Failed to complete multipart upload on the object storage',
+    );
+  }
+}
+
+export class VideoNotReadyException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_READY', 409, 'Video is not ready');
+  }
+}
+
+export class VideoNotErrorException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_ERROR', 409, 'Video is not in error status');
+  }
+}

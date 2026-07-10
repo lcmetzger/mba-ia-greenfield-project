@@ -34,6 +34,12 @@ docker compose exec nestjs-api npm run start:dev
 Services:
 - `nestjs-api` — NestJS API, port `3000`
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `minio` — S3-compatible object storage, ports `9000` (API) / `9001` (console); buckets `streamtube-videos`/`streamtube-thumbnails` created by the one-shot `minio-init` service
+- `redis` — BullMQ backing store, port `6379`
+- `video-worker` — same image/bind-mount as `nestjs-api`, but idles at container start (no `command:` override, same "don't auto-start long-running processes" convention as `nestjs-api`). Start it manually to process videos:
+  ```bash
+  docker compose exec -d video-worker npm run start:worker:dev
+  ```
 
 All verification and teardown commands run on the **host machine**:
 
@@ -148,6 +154,33 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 - Each domain feature gets its own module (e.g., `UsersModule`, `VideosModule`) registered in `AppModule`
 - Controllers handle HTTP routing; Services hold business logic; both are scoped to their module
+
+## Video Upload & Processing
+
+Videos are uploaded directly to object storage (never through the API process) and processed asynchronously by a separate worker. See `docs/phases/phase-03-videos/phase-03-videos.md` for the full plan and technical decisions.
+
+**`VideosModule`** (`src/videos/`) — the `Video` entity (`status`: `draft` → `processing` → `ready`/`error`) and the HTTP surface:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/videos` | Pre-registers a draft video and starts a multipart upload on object storage |
+| `POST` | `/videos/:id/upload-parts` | Returns one presigned PUT URL per requested part number (client uploads directly to MinIO) |
+| `POST` | `/videos/:id/complete` | Finalizes the multipart upload, transitions to `processing`, enqueues the `video.process` job |
+| `GET` | `/videos` | Lists the caller's channel videos |
+| `GET` | `/videos/:id` | Video detail — used for polling processing status |
+| `GET` | `/videos/:shortCode/stream` | Authenticated proxy read from object storage; honors `Range`/`206 Partial Content` |
+| `GET` | `/videos/:shortCode/download` | Same proxy, with `Content-Disposition: attachment` |
+| `POST` | `/videos/:id/reprocess` | Re-enqueues processing for a video in `error`, without a new upload |
+
+All routes except by-`id` management routes (`upload-parts`/`complete`/`reprocess`) resolve ownership through the caller's channel; the `:shortCode` routes are the shareable links and distinguish `404` (not found) from `403` (not owned).
+
+**`StorageModule`** (`src/storage/`) — `StorageService` wraps `@aws-sdk/client-s3` against MinIO (`forcePathStyle: true`): multipart upload lifecycle, presigned part URLs, `getObjectStream` (with optional `Range`), and a direct `putObject` used by the worker to upload thumbnails.
+
+**`QueueModule`** (`src/queue/`) — thin `@nestjs/bullmq` wrapper around the `video-processing` queue (Redis-backed). `VideosService` is the producer (`video.process` job, payload `{ videoId }`, 3 attempts with exponential backoff starting at 5s).
+
+**Worker** (`src/video-processing/`, `src/worker.module.ts`, `src/worker.main.ts`) — a second, independent NestJS bootstrap (`NestFactory.createApplicationContext`, no HTTP, no `AuthModule`) that consumes the queue: downloads the original from MinIO, extracts metadata and a thumbnail via real `ffmpeg`/`ffprobe` binaries (`FfmpegService`, `child_process.execFile` — no wrapper library), uploads the thumbnail, and marks the video `ready`. After exhausting all retry attempts, the video is marked `error` with the failure message. Runs in its own `video-worker` container (see "Development Environment" above for how to start it).
+
+**Config/env** — `storage.config.ts` (`STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET_VIDEOS`, `STORAGE_BUCKET_THUMBNAILS`) and `queue.config.ts` (`REDIS_HOST`, `REDIS_PORT`).
 
 ## Code Conventions
 

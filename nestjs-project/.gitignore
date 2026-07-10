@@ -19,6 +19,10 @@ lerna-debug.log*
 /coverage
 /.nyc_output
 
+# Large synthetic fixtures for manual upload testing (api.http) — generated
+# locally via dd/truncate, never committed (multi-GB sparse files)
+/src/test/fixtures/large-upload/
+
 # IDEs and editors
 /.idea
 .project

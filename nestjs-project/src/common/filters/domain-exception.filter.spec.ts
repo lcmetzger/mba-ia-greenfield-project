@@ -11,14 +11,16 @@ import {
 
 describe('DomainExceptionFilter', () => {
   let filter: DomainExceptionFilter;
-  let mockJson: jest.Mock;
-  let mockStatus: jest.Mock;
+  let mockJson: jest.Mock<void, [Record<string, unknown>]>;
+  let mockStatus: jest.Mock<{ json: typeof mockJson }, [number]>;
   let mockHost: ArgumentsHost;
 
   beforeEach(() => {
     filter = new DomainExceptionFilter();
-    mockJson = jest.fn();
-    mockStatus = jest.fn().mockReturnValue({ json: mockJson });
+    mockJson = jest.fn<void, [Record<string, unknown>]>();
+    mockStatus = jest
+      .fn<{ json: typeof mockJson }, [number]>()
+      .mockReturnValue({ json: mockJson });
 
     mockHost = {
       switchToHttp: () => ({
@@ -27,8 +29,8 @@ describe('DomainExceptionFilter', () => {
       }),
       getArgs: () => [],
       getArgByIndex: () => null,
-      switchToRpc: () => ({}) as any,
-      switchToWs: () => ({}) as any,
+      switchToRpc: () => ({}) as unknown,
+      switchToWs: () => ({}) as unknown,
       getType: () => 'http',
     } as unknown as ArgumentsHost;
   });
@@ -51,7 +53,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'INVALID_CREDENTIALS',
-      message: expect.any(String),
+      message: 'Invalid email or password',
     });
   });
 
@@ -62,7 +64,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 403,
       error: 'EMAIL_NOT_CONFIRMED',
-      message: expect.any(String),
+      message: 'Email address has not been confirmed',
     });
   });
 
@@ -73,7 +75,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'INVALID_TOKEN',
-      message: expect.any(String),
+      message: 'Token is invalid',
     });
   });
 
@@ -84,7 +86,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'TOKEN_EXPIRED',
-      message: expect.any(String),
+      message: 'Token has expired',
     });
   });
 
@@ -95,7 +97,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'TOKEN_REUSE_DETECTED',
-      message: expect.any(String),
+      message: 'Token reuse detected — all sessions revoked',
     });
   });
 });

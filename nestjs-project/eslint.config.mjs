@@ -32,4 +32,13 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      // jest.Mocked<T>'s methods retain T's `this` parameter type, so
+      // `expect(mock.method).toHaveBeenCalledWith(...)` always trips this
+      // rule even though jest mock functions never depend on `this`.
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );

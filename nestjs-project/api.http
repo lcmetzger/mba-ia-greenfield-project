@@ -14,6 +14,28 @@
 @confirmationToken = <token do e-mail de confirmacao>
 @resetToken = <token do e-mail de reset>
 
+# Id do vídeo capturado automaticamente da iniciação de upload
+@videoId = {{initiateLargeUpload.response.body.$.id}}
+
+# Metadados do upload grande simulado (ver seção VIDEOS — UPLOAD GRANDE abaixo)
+@largeVideoTitle = Large upload simulation
+@largeVideoContentType = video/mp4
+@largeVideoFilename = huge-video.mp4
+# Exatamente 10GiB (10 * 1024^3) — o limite permitido pela API; os bytes
+# reais enviados nas 3 partes abaixo somam ~10,001 GiB, ultrapassando esse
+# valor de propósito (ver comentário na seção de upload grande).
+@largeVideoDeclaredSizeBytes = 10737418240
+
+# ETags das partes do upload grande — preencher manualmente após cada PUT
+# (12/13/14): copie o valor do header "ETag" da resposta, COM as aspas
+# (ex.: "d41d8cd98f00b204e9800998ecf8427e"). A captura automática via
+# {{requestName.response.headers.etag}} depende do REST Client manter em
+# cache a resposta anterior na mesma sessão do editor — preencher manual
+# evita depender disso.
+@part1Etag = <ETag do PUT da parte 1, com aspas>
+@part2Etag = <ETag do PUT da parte 2, com aspas>
+@part3Etag = <ETag do PUT da parte 3, com aspas>
+
 
 ###
 # ─────────────────────────────────────────────
@@ -118,3 +140,117 @@ Content-Type: {{contentType}}
   "token": "{{resetToken}}",
   "new_password": "new-password123"
 }
+
+
+###
+# ─────────────────────────────────────────────
+# VIDEOS — UPLOAD GRANDE (simulação de arquivo > 10GB)
+# ─────────────────────────────────────────────
+#
+# PRÉ-REQUISITOS:
+#
+# 1. Gerar os arquivos de parte (esparsos — não ocupam espaço real em
+#    disco até o upload de fato, mas SOMAM mais de 10GB "aparentes"):
+#
+#      mkdir -p src/test/fixtures/large-upload
+#      dd if=/dev/zero of=src/test/fixtures/large-upload/part-1.bin bs=1 count=1 seek=5368709119
+#      dd if=/dev/zero of=src/test/fixtures/large-upload/part-2.bin bs=1 count=1 seek=5368709119
+#      dd if=/dev/zero of=src/test/fixtures/large-upload/part-3.bin bs=1 count=1 seek=1048575
+#
+#    Total real: 5GiB + 5GiB + 1MiB = 10.001 GiB (10.738.466.816 bytes),
+#    acima do limite de 10GiB (10.737.418.240 bytes). Já estão no
+#    .gitignore — nunca serão commitados.
+#
+# 2. As URLs pré-assinadas do MinIO usam o hostname interno do Docker
+#    Compose (`minio`). Para o REST Client (rodando no host, fora do
+#    Docker) conseguir enviar os PUTs abaixo, adicione ao /etc/hosts:
+#
+#      127.0.0.1 minio
+#
+#    (a porta 9000 do MinIO já está publicada para o host no compose.yaml)
+#
+# 3. Faça login antes (requisição "4. Login" acima) para que
+#    {{accessToken}} esteja preenchido.
+
+### 10a. [Só a checagem de tamanho declarado] Tenta declarar > 10GB — deve retornar 400 FILE_TOO_LARGE, sem gerar upload
+POST {{baseUrl}}/videos
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "title": "Rejected — too large",
+  "content_type": "video/mp4",
+  "size_bytes": 10737418241,
+  "original_filename": "too-big.mp4"
+}
+
+
+### 10b. Iniciar o upload grande — size_bytes declarado no limite permitido (10GiB exatos)
+# @name initiateLargeUpload
+POST {{baseUrl}}/videos
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "title": "{{largeVideoTitle}}",
+  "content_type": "{{largeVideoContentType}}",
+  "size_bytes": {{largeVideoDeclaredSizeBytes}},
+  "original_filename": "{{largeVideoFilename}}"
+}
+
+
+### 11. Solicitar URLs pré-assinadas para as 3 partes
+# @name uploadLargeParts
+POST {{baseUrl}}/videos/{{videoId}}/upload-parts
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "part_numbers": [1, 2, 3]
+}
+
+
+### 12. Upload da parte 1 (5GiB) — pode levar dezenas de segundos
+# @name uploadLargePart1
+PUT {{uploadLargeParts.response.body.$.parts[0].url}}
+Content-Type: application/octet-stream
+
+< ./src/test/fixtures/large-upload/part-1.bin
+
+
+### 13. Upload da parte 2 (5GiB) — pode levar dezenas de segundos
+# @name uploadLargePart2
+PUT {{uploadLargeParts.response.body.$.parts[1].url}}
+Content-Type: application/octet-stream
+
+< ./src/test/fixtures/large-upload/part-2.bin
+
+
+### 14. Upload da parte 3 (1MiB — o pedaço que empurra o total para além de 10GB)
+# @name uploadLargePart3
+PUT {{uploadLargeParts.response.body.$.parts[2].url}}
+Content-Type: application/octet-stream
+
+< ./src/test/fixtures/large-upload/part-3.bin
+
+
+### 15. Concluir o upload — usa os ETags preenchidos manualmente no topo do arquivo
+# Antes de enviar: copie o header "ETag" da resposta de cada PUT (12/13/14)
+# — vem entre aspas, ex.: "d41d8cd98f00b204e9800998ecf8427e" — e cole em
+# @part1Etag / @part2Etag / @part3Etag lá em cima, COM as aspas.
+POST {{baseUrl}}/videos/{{videoId}}/complete
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "parts": [
+    { "part_number": 1, "etag": {{part1Etag}} },
+    { "part_number": 2, "etag": {{part2Etag}} },
+    { "part_number": 3, "etag": {{part3Etag}} }
+  ]
+}
+
+
+### 16. Acompanhar o status do vídeo (draft → processing → ready, se o worker estiver rodando)
+GET {{baseUrl}}/videos/{{videoId}}
+Authorization: Bearer {{accessToken}}

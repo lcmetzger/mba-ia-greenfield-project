@@ -1,8 +1,11 @@
+import type { DataSource } from 'typeorm';
 import { QueryFailedError } from 'typeorm';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
 
-function makeManager(overrides: Record<string, jest.Mock> = {}): any {
+function makeManager(
+  overrides: Partial<Record<'findOne' | 'create' | 'save', jest.Mock>> = {},
+) {
   return {
     findOne: jest.fn(),
     create: jest.fn(),
@@ -24,16 +27,26 @@ function makeChannel(nickname: string): Channel {
 }
 
 function makeUniqueError(): QueryFailedError {
-  const err = new QueryFailedError('INSERT', [], new Error()) as any;
-  err.code = '23505';
-  err.detail = 'Key (nickname)=(abc) already exists.';
-  return err;
+  const driverError = Object.assign(new Error('duplicate key'), {
+    code: '23505',
+    detail: 'Key (nickname)=(abc) already exists.',
+  });
+  return new QueryFailedError('INSERT', [], driverError);
 }
 
-function makeDataSource(manager: any): any {
+function makeDataSource(manager: ReturnType<typeof makeManager>) {
   return {
-    transaction: jest.fn((cb: (manager: any) => Promise<any>) => cb(manager)),
+    transaction: jest.fn(
+      (cb: (manager: ReturnType<typeof makeManager>) => Promise<Channel>) =>
+        cb(manager),
+    ),
   };
+}
+
+function makeService(
+  dataSource: ReturnType<typeof makeDataSource>,
+): ChannelsService {
+  return new ChannelsService(dataSource as unknown as DataSource);
 }
 
 describe('ChannelsService', () => {
@@ -45,7 +58,7 @@ describe('ChannelsService', () => {
         create: jest.fn().mockReturnValue(channel),
         save: jest.fn().mockResolvedValue(channel),
       });
-      const service = new ChannelsService(makeDataSource(manager));
+      const service = makeService(makeDataSource(manager));
 
       const result = await service.createChannel('user-id', 'test@example.com');
 
@@ -67,7 +80,7 @@ describe('ChannelsService', () => {
         create: jest.fn().mockReturnValue(resolved),
         save: jest.fn().mockResolvedValue(resolved),
       });
-      const service = new ChannelsService(makeDataSource(manager));
+      const service = makeService(makeDataSource(manager));
 
       const result = await service.createChannel('user-id', 'john@example.com');
 
@@ -89,7 +102,7 @@ describe('ChannelsService', () => {
           .mockRejectedValueOnce(makeUniqueError())
           .mockResolvedValueOnce(resolved),
       });
-      const service = new ChannelsService(makeDataSource(manager));
+      const service = makeService(makeDataSource(manager));
 
       const result = await service.createChannel(
         'user-id',
@@ -107,7 +120,7 @@ describe('ChannelsService', () => {
         create: jest.fn(),
         save: jest.fn(),
       });
-      const service = new ChannelsService(makeDataSource(manager));
+      const service = makeService(makeDataSource(manager));
 
       await expect(
         service.createChannel('user-id', 'bob@example.com'),
@@ -124,7 +137,7 @@ describe('ChannelsService', () => {
         create: jest.fn().mockReturnValue(channel),
         save: jest.fn().mockRejectedValue(unexpectedError),
       });
-      const service = new ChannelsService(makeDataSource(manager));
+      const service = makeService(makeDataSource(manager));
 
       await expect(
         service.createChannel('user-id', 'carol@example.com'),
